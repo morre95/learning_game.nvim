@@ -3,7 +3,7 @@ local uv = vim.uv or vim.loop
 
 local default_config = {
 	assignment_count = 20,
-	assignment_symbols = { "x", "r", "y", "u", "p" },
+	assignment_symbols = { "x", "r" },
 	board = {
 		width = 56,
 		height = 18,
@@ -33,19 +33,6 @@ local function calc_popup_size(lines)
 	return width + padding, height
 end
 
----@param lines any
----@return string[]|nil
-local function copy_regcontents(lines)
-	if type(lines) ~= "table" then
-		return nil
-	end
-	local copy = {}
-	for i, line in ipairs(lines) do
-		copy[i] = line
-	end
-	return copy
-end
-
 local Game = {}
 Game.__index = Game
 
@@ -56,8 +43,7 @@ function Game:new(cfg)
 	obj.completed = 0
 	obj.active = false
 	obj.key_count = 0
-	obj.last_yank_text = nil
-	obj.last_yank_line = nil
+
 	return obj
 end
 
@@ -234,21 +220,6 @@ function Game:start_tracking()
 		end,
 	})
 
-	vim.api.nvim_create_autocmd("TextYankPost", {
-		group = self.augroup,
-		callback = function(params)
-			local regcontents = copy_regcontents(vim.v.event.regcontents)
-			local event = {
-				buf = params.buf,
-				operator = vim.v.event.operator,
-				regname = vim.v.event.regname,
-				regcontents = regcontents,
-				regtype = vim.v.event.regtype,
-			}
-			self:on_yanked(event)
-		end,
-	})
-
 	vim.api.nvim_create_autocmd("BufWipeout", {
 		buffer = self.buf,
 		group = self.augroup,
@@ -316,38 +287,6 @@ function Game:on_cursor_moved()
 					end
 				end
 				return
-			end
-		end
-	end
-end
-
-function Game:on_yanked(event)
-	if not event or not event.regcontents then
-		return
-	end
-	self.last_yank_text = table.concat(event.regcontents, "\n")
-	self.last_yank_line = event.regcontents[1]
-	if not self.active or event.buf ~= self.buf or event.operator ~= "y" then
-		return
-	end
-	local start_mark = vim.api.nvim_buf_get_mark(self.buf, "'[")
-	if start_mark[1] == 0 then
-		return
-	end
-	local end_mark = vim.api.nvim_buf_get_mark(self.buf, "']")
-	if end_mark[1] == 0 then
-		return
-	end
-	local sline = start_mark[1]
-	local eline = end_mark[1]
-	if sline > eline then
-		sline, eline = eline, sline
-	end
-	for _, assignment in ipairs(self.assignments) do
-		if not assignment.done and assignment.type == "y" then
-			local line = select(1, self:get_assignment_coords(assignment))
-			if line >= sline and line <= eline then
-				self:mark_assignment_done(assignment)
 			end
 		end
 	end
@@ -497,53 +436,6 @@ assignment_types = {
 		check = function(game, assignment)
 			local char = game:get_assignment_char(assignment)
 			return char ~= "r" and char ~= ""
-		end,
-	},
-	y = {
-		description = "Yank this entire line with `yy` or another linewise yank.",
-		cleanup = function(game, assignment)
-			local line, col = game:get_assignment_coords(assignment)
-			game:set_char(line, col, ".")
-		end,
-	},
-	u = {
-		description = "Make a change at this marker and undo it with `u`.",
-		check = function(game, assignment)
-			local char = game:get_assignment_char(assignment)
-			if char ~= "u" then
-				assignment.seen_change = true
-			end
-			return assignment.seen_change and char == "u"
-		end,
-		cleanup = function(game, assignment)
-			local line, col = game:get_assignment_coords(assignment)
-			game:set_char(line, col, ".")
-		end,
-	},
-	p = {
-		description = "Paste (`p`) the text you last yanked so it starts at this marker.",
-		check = function(game, assignment)
-			local char, line, col = game:get_assignment_char(assignment)
-			if char ~= "p" then
-				assignment.seen_change = true
-			end
-			if not assignment.seen_change then
-				return false
-			end
-			local expected = game.last_yank_line
-			if not expected or expected == "" then
-				return false
-			end
-			local line_text = game:get_line(line)
-			if line_text == "" then
-				return false
-			end
-			local stop_col = col + #expected - 1
-			if stop_col > #line_text then
-				return false
-			end
-			local actual = line_text:sub(col, stop_col)
-			return actual == expected
 		end,
 	},
 }
