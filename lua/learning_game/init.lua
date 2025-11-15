@@ -16,6 +16,19 @@ local MARK_NS = vim.api.nvim_create_namespace("learning_game_markers")
 local assignment_types = {}
 math.randomseed(uv.hrtime() % 1e9)
 
+local KEY_HINT = table.concat({
+	"Det är en del av Neovims notation för specialtangenter:",
+	"<CR> = Enter",
+	"<Esc> = Escape",
+	"<Tab> = Tab",
+	"<Space> = Mellanslag",
+	"<BS> = Backspace",
+	"<C-x> = Ctrl+x",
+	"<S-x> = Shift+x",
+	"<A-x>/<M-x> = Alt+x",
+	"<leader> = Leader (vanligen Mellanslag i LazyVim)",
+}, "\n")
+
 local function shuffle(list)
 	for i = #list, 2, -1 do
 		local j = math.random(i)
@@ -218,13 +231,21 @@ end
 
 function Game:start_tracking()
 	self.augroup = vim.api.nvim_create_augroup("LearningGame" .. self.buf, { clear = true })
-	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-		buffer = self.buf,
-		group = self.augroup,
-		callback = function()
-			self:evaluate_assignments()
-		end,
-	})
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    buffer = self.buf,
+    group = self.augroup,
+    callback = function()
+      self:evaluate_assignments()
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    buffer = self.buf,
+    group = self.augroup,
+    callback = function()
+      self:on_cursor_moved()
+    end,
+  })
 
 	vim.api.nvim_create_autocmd("TextYankPost", {
 		group = self.augroup,
@@ -276,6 +297,38 @@ function Game:evaluate_assignments()
 				if ok then
 					self:mark_assignment_done(assignment)
 				end
+			end
+		end
+	end
+end
+
+function Game:on_cursor_moved()
+	if not self.active then
+		return
+	end
+	if not self.win or vim.api.nvim_get_current_win() ~= self.win then
+		return
+	end
+	local cursor = vim.api.nvim_win_get_cursor(self.win)
+	local line = cursor[1]
+	local col = cursor[2] + 1
+	for _, assignment in ipairs(self.assignments) do
+		if not assignment.done then
+			local aline, acol = self:get_assignment_coords(assignment)
+			if line == aline and col == acol then
+				if not assignment.notified then
+					assignment.notified = true
+					local handler = assignment_types[assignment.type]
+					local desc = handler and handler.description or ""
+					if desc ~= "" then
+						local message = KEY_HINT .. "\n\n" .. string.format("Uppgift <%s>: %s", assignment.type, desc)
+						vim.notify(message, vim.log.levels.INFO, {
+							title = "LearningGame assignment",
+							timeout = 8000,
+						})
+					end
+				end
+				return
 			end
 		end
 	end

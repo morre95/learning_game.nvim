@@ -38,6 +38,7 @@ Once installed you get two commands:
 - The buffer is scratch (`nofile`) so you can edit freely without touching existing files.
 - Each marker highlights itself until you complete the corresponding action; completed markers disappear and the target prompt jumps to the next assignment.
 - Use normal motions to travel quickly between markers. Insertions or deletions will naturally move the remaining markers because they are real buffer characters.
+- Standing on a marker triggers a notification that both explains the key-notation legends (`<CR>`, `<Esc>`, `<leader>`, etc.) and reminds you what to do for that assignment.
 - `p` assignments rely on the text you most recently yanked (from any buffer). Yank first, then paste over the marker.
 - Stats are shown via `vim.notify` when the run ends. Closing the buffer early also stops tracking and reports partial progress.
 
