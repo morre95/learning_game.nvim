@@ -5,7 +5,6 @@ LearningGame is a small Neovim mini-game built for LazyVim users who want to dri
 - `x` – delete the marker with `x`
 - `r` – replace the character via `r`
 
-
 The game tracks elapsed time, total key presses, and keys per minute. When you complete all assignments you get a centered popup with the run’s stats (aborting still shows a notify-only summary).
 
 ## Installation (LazyVim / lazy.nvim)
@@ -14,7 +13,7 @@ Add the plugin to your LazyVim configuration and call `setup` once with any over
 
 ```lua
 {
-  "erikm/LearningGame",
+  "morre95/learning_game.nvim",
   config = function()
     require("learning_game").setup({
       assignment_count = 20,
