@@ -16,19 +16,6 @@ local MARK_NS = vim.api.nvim_create_namespace("learning_game_markers")
 local assignment_types = {}
 math.randomseed(uv.hrtime() % 1e9)
 
-local KEY_HINT = table.concat({
-	"Det är en del av Neovims notation för specialtangenter:",
-	"<CR> = Enter",
-	"<Esc> = Escape",
-	"<Tab> = Tab",
-	"<Space> = Mellanslag",
-	"<BS> = Backspace",
-	"<C-x> = Ctrl+x",
-	"<S-x> = Shift+x",
-	"<A-x>/<M-x> = Alt+x",
-	"<leader> = Leader (vanligen Mellanslag i LazyVim)",
-}, "\n")
-
 local function shuffle(list)
 	for i = #list, 2, -1 do
 		local j = math.random(i)
@@ -231,21 +218,21 @@ end
 
 function Game:start_tracking()
 	self.augroup = vim.api.nvim_create_augroup("LearningGame" .. self.buf, { clear = true })
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-    buffer = self.buf,
-    group = self.augroup,
-    callback = function()
-      self:evaluate_assignments()
-    end,
-  })
+	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+		buffer = self.buf,
+		group = self.augroup,
+		callback = function()
+			self:evaluate_assignments()
+		end,
+	})
 
-  vim.api.nvim_create_autocmd("CursorMoved", {
-    buffer = self.buf,
-    group = self.augroup,
-    callback = function()
-      self:on_cursor_moved()
-    end,
-  })
+	vim.api.nvim_create_autocmd("CursorMoved", {
+		buffer = self.buf,
+		group = self.augroup,
+		callback = function()
+			self:on_cursor_moved()
+		end,
+	})
 
 	vim.api.nvim_create_autocmd("TextYankPost", {
 		group = self.augroup,
@@ -321,7 +308,7 @@ function Game:on_cursor_moved()
 					local handler = assignment_types[assignment.type]
 					local desc = handler and handler.description or ""
 					if desc ~= "" then
-						local message = KEY_HINT .. "\n\n" .. string.format("Uppgift <%s>: %s", assignment.type, desc)
+						local message = string.format("Assignment <%s>: %s", assignment.type, desc)
 						vim.notify(message, vim.log.levels.INFO, {
 							title = "LearningGame assignment",
 							timeout = 8000,
@@ -344,12 +331,15 @@ function Game:on_yanked(event)
 		return
 	end
 	local start_mark = vim.api.nvim_buf_get_mark(self.buf, "'[")
-	local end_mark = vim.api.nvim_buf_get_mark(self.buf, "']")
-	local sline = start_mark[1]
-	local eline = end_mark[1]
-	if sline == 0 or eline == 0 then
+	if start_mark[1] == 0 then
 		return
 	end
+	local end_mark = vim.api.nvim_buf_get_mark(self.buf, "']")
+	if end_mark[1] == 0 then
+		return
+	end
+	local sline = start_mark[1]
+	local eline = end_mark[1]
 	if sline > eline then
 		sline, eline = eline, sline
 	end
