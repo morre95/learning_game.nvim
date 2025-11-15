@@ -39,22 +39,23 @@ Game.__index = Game
 function Game:new(cfg)
 	local obj = setmetatable({}, Game)
 	obj.config = cfg
-	obj.assignments = {}
 	obj.completed = 0
 	obj.active = false
 	obj.key_count = 0
+	obj.total_assignments = cfg.assignment_count
+	obj.assignment_queue = {}
+	obj.current_assignment = nil
 
 	return obj
 end
 
 function Game:start()
 	self:open_board()
-	self:populate_assignments()
-	self:start_tracking()
 	self.active = true
 	self.start_time = uv.hrtime()
+	self:populate_assignments()
+	self:start_tracking()
 	self:update_status()
-	self:display_tip()
 end
 
 function Game:open_board()
@@ -117,6 +118,7 @@ function Game:assignment_pool()
 end
 
 function Game:populate_assignments()
+	self.assignment_queue = {}
 	local positions = self:random_positions(self.config.assignment_count)
 	local pool = self:assignment_pool()
 	for i = 1, self.config.assignment_count do
@@ -128,17 +130,35 @@ function Game:populate_assignments()
 				type = symbol,
 				line = positions[i].line,
 				col = positions[i].col,
-				description = handler.description,
-				seen_change = false,
 				done = false,
 			}
-			table.insert(self.assignments, assignment)
-			self:set_char(assignment.line, assignment.col, symbol)
-			self:create_marker(assignment)
+			table.insert(self.assignment_queue, assignment)
 		else
 			vim.notify(string.format("LearningGame: no assignment handler for '%s'", symbol), vim.log.levels.ERROR)
 		end
 	end
+	self:spawn_next_assignment()
+end
+
+function Game:spawn_next_assignment()
+	if not self.active then
+		return
+	end
+	if self.current_assignment then
+		return
+	end
+	local assignment = table.remove(self.assignment_queue, 1)
+	if not assignment then
+		self:display_tip()
+		return
+	end
+	assignment.done = false
+	assignment.notified = false
+	self.current_assignment = assignment
+	self:set_char(assignment.line, assignment.col, assignment.type)
+	self:create_marker(assignment)
+	self:update_status()
+	self:display_tip()
 end
 
 function Game:set_char(line, col, char)
@@ -247,15 +267,15 @@ function Game:evaluate_assignments()
 	if not self.active then
 		return
 	end
-	for _, assignment in ipairs(self.assignments) do
-		if not assignment.done then
-			local handler = assignment_types[assignment.type]
-			if handler and handler.check then
-				local ok = handler.check(self, assignment)
-				if ok then
-					self:mark_assignment_done(assignment)
-				end
-			end
+	local assignment = self.current_assignment
+	if not assignment or assignment.done then
+		return
+	end
+	local handler = assignment_types[assignment.type]
+	if handler and handler.check then
+		local ok = handler.check(self, assignment)
+		if ok then
+			self:mark_assignment_done(assignment)
 		end
 	end
 end
@@ -270,23 +290,22 @@ function Game:on_cursor_moved()
 	local cursor = vim.api.nvim_win_get_cursor(self.win)
 	local line = cursor[1]
 	local col = cursor[2] + 1
-	for _, assignment in ipairs(self.assignments) do
-		if not assignment.done then
-			local aline, acol = self:get_assignment_coords(assignment)
-			if line == aline and col == acol then
-				if not assignment.notified then
-					assignment.notified = true
-					local handler = assignment_types[assignment.type]
-					local desc = handler and handler.description or ""
-					if desc ~= "" then
-						local message = string.format("Assignment <%s>: %s", assignment.type, desc)
-						vim.notify(message, vim.log.levels.INFO, {
-							title = "LearningGame assignment",
-							timeout = 8000,
-						})
-					end
-				end
-				return
+	local assignment = self.current_assignment
+	if not assignment or assignment.done then
+		return
+	end
+	local aline, acol = self:get_assignment_coords(assignment)
+	if line == aline and col == acol then
+		if not assignment.notified then
+			assignment.notified = true
+			local handler = assignment_types[assignment.type]
+			local desc = handler and handler.description or ""
+			if desc ~= "" then
+				local message = string.format("Assignment <%s>: %s", assignment.type, desc)
+				vim.notify(message, vim.log.levels.INFO, {
+					title = "LearningGame assignment",
+					timeout = 8000,
+				})
 			end
 		end
 	end
@@ -300,19 +319,18 @@ function Game:mark_assignment_done(assignment)
 		handler.cleanup(self, assignment)
 	end
 	self:clear_marker(assignment)
+	self.current_assignment = nil
 	self:update_status()
-	self:display_tip()
-	if self.completed == #self.assignments then
+	if self.completed >= self.total_assignments then
+		self:display_tip()
 		self:finish(false)
+	else
+		self:spawn_next_assignment()
 	end
 end
 
 function Game:next_assignment()
-	for _, assignment in ipairs(self.assignments) do
-		if not assignment.done then
-			return assignment
-		end
-	end
+	return self.current_assignment
 end
 
 function Game:display_tip()
@@ -335,7 +353,7 @@ function Game:update_status()
 	if not self.win or not vim.api.nvim_win_is_valid(self.win) then
 		return
 	end
-	local total = #self.assignments
+	local total = self.total_assignments
 	local msg = string.format(" LearningGame %02d/%02d | Keys %d ", self.completed, total, self.key_count)
 	vim.wo[self.win].statusline = msg .. "%=%l:%c"
 end
@@ -367,15 +385,10 @@ function Game:finish(aborted)
 	local kpm = self.key_count / minutes
 	if aborted then
 		vim.notify(
-			string.format("LearningGame aborted – %d/%d assignments solved", self.completed, #self.assignments),
+			string.format("LearningGame aborted – %d/%d assignments solved", self.completed, self.total_assignments),
 			vim.log.levels.WARN
 		)
 	else
-		-- vim.notify(
-		-- 	string.format("LearningGame finished in %.1fs | %d keys | %.1f keys/min", total_time, self.key_count, kpm),
-		-- 	vim.log.levels.INFO,
-		-- 	{ title = "LearningGame stats" }
-		-- )
 		self:show_results_popup(total_time, kpm)
 	end
 	M.active_game = nil
@@ -385,7 +398,7 @@ function Game:show_results_popup(total_time, kpm)
 	local lines = {
 		" LearningGame Complete ",
 		string.rep("-", 26),
-		string.format("Assignments   : %d/%d", self.completed, #self.assignments),
+		string.format("Assignments   : %d/%d", self.completed, self.total_assignments),
 		string.format("Time elapsed  : %.1f s", total_time),
 		string.format("Key presses   : %d", self.key_count),
 		string.format("Keys per min  : %.1f", kpm),
