@@ -1,0 +1,514 @@
+local M = {}
+local uv = vim.uv or vim.loop
+
+local default_config = {
+  assignment_count = 20,
+  assignment_symbols = { "x", "r", "y", "u", "p" },
+  board = {
+    width = 56,
+    height = 18,
+  },
+}
+
+local config = vim.deepcopy(default_config)
+local KEY_NS = vim.api.nvim_create_namespace("learning_game_key_tracker")
+local MARK_NS = vim.api.nvim_create_namespace("learning_game_markers")
+local assignment_types = {}
+math.randomseed(uv.hrtime() % 1e9)
+
+local function shuffle(list)
+  for i = #list, 2, -1 do
+    local j = math.random(i)
+    list[i], list[j] = list[j], list[i]
+  end
+end
+
+---@param lines any
+---@return string[]|nil
+local function copy_regcontents(lines)
+  if type(lines) ~= "table" then
+    return nil
+  end
+  local copy = {}
+  for i, line in ipairs(lines) do
+    copy[i] = line
+  end
+  return copy
+end
+
+local Game = {}
+Game.__index = Game
+
+function Game:new(cfg)
+  local obj = setmetatable({}, Game)
+  obj.config = cfg
+  obj.assignments = {}
+  obj.completed = 0
+  obj.active = false
+  obj.key_count = 0
+  obj.last_yank_text = nil
+  obj.last_yank_line = nil
+  return obj
+end
+
+function Game:start()
+  self:open_board()
+  self:populate_assignments()
+  self:start_tracking()
+  self.active = true
+  self.start_time = uv.hrtime()
+  self:update_status()
+  self:display_tip()
+end
+
+function Game:open_board()
+  vim.cmd("tabnew")
+  self.win = vim.api.nvim_get_current_win()
+  self.buf = vim.api.nvim_get_current_buf()
+  vim.bo[self.buf].bufhidden = "wipe"
+  vim.bo[self.buf].buftype = "nofile"
+  vim.bo[self.buf].swapfile = false
+  vim.bo[self.buf].filetype = "learninggame"
+  vim.bo[self.buf].modifiable = true
+  vim.bo[self.buf].readonly = false
+  vim.wo[self.win].number = false
+  vim.wo[self.win].relativenumber = false
+  vim.wo[self.win].cursorline = false
+  vim.api.nvim_buf_set_name(self.buf, "LearningGame")
+
+  local lines = {}
+  for _ = 1, self.config.board.height do
+    lines[#lines + 1] = string.rep(".", self.config.board.width)
+  end
+  vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
+
+  vim.keymap.set("n", "q", function()
+    if self.active then
+      self:finish(true)
+    else
+      vim.cmd("tabclose")
+    end
+  end, { buffer = self.buf, nowait = true, desc = "Quit LearningGame" })
+end
+
+function Game:random_positions(count)
+  local cells = {}
+  for line = 1, self.config.board.height do
+    for col = 1, self.config.board.width do
+      cells[#cells + 1] = { line = line, col = col }
+    end
+  end
+  shuffle(cells)
+  local result = {}
+  for i = 1, count do
+    result[i] = cells[i]
+  end
+  return result
+end
+
+function Game:assignment_pool()
+  local pool = {}
+  while #pool < self.config.assignment_count do
+    for _, symbol in ipairs(self.config.assignment_symbols) do
+      pool[#pool + 1] = symbol
+      if #pool == self.config.assignment_count then
+        break
+      end
+    end
+  end
+  shuffle(pool)
+  return pool
+end
+
+function Game:populate_assignments()
+  local positions = self:random_positions(self.config.assignment_count)
+  local pool = self:assignment_pool()
+  for i = 1, self.config.assignment_count do
+    local symbol = pool[i]
+    local handler = assignment_types[symbol]
+    if handler then
+      local assignment = {
+        id = i,
+        type = symbol,
+        line = positions[i].line,
+        col = positions[i].col,
+        description = handler.description,
+        seen_change = false,
+        done = false,
+      }
+      table.insert(self.assignments, assignment)
+      self:set_char(assignment.line, assignment.col, symbol)
+      self:create_marker(assignment)
+    else
+      vim.notify(
+        string.format("LearningGame: no assignment handler for '%s'", symbol),
+        vim.log.levels.ERROR
+      )
+    end
+  end
+end
+
+function Game:set_char(line, col, char)
+  if not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+  local line_text = vim.api.nvim_buf_get_lines(self.buf, line - 1, line, false)[1] or ""
+  if #line_text < col - 1 then
+    line_text = line_text .. string.rep(".", (col - 1) - #line_text)
+  end
+  if #line_text < col then
+    line_text = line_text .. "."
+  end
+  local before = line_text:sub(1, col - 1)
+  local after = line_text:sub(col + 1)
+  local new_line = before .. char .. after
+  vim.api.nvim_buf_set_lines(self.buf, line - 1, line, false, { new_line })
+end
+
+function Game:get_line(line)
+  return vim.api.nvim_buf_get_lines(self.buf, line - 1, line, false)[1] or ""
+end
+
+function Game:get_char(line, col)
+  local line_text = self:get_line(line)
+  if col > #line_text then
+    return ""
+  end
+  return line_text:sub(col, col)
+end
+
+function Game:get_assignment_coords(assignment)
+  if assignment.mark_id and vim.api.nvim_buf_is_valid(self.buf) then
+    local ok, pos = pcall(vim.api.nvim_buf_get_extmark_by_id, self.buf, MARK_NS, assignment.mark_id, {})
+    if ok and pos and pos[1] then
+      assignment.line = pos[1] + 1
+      assignment.col = pos[2] + 1
+    end
+  end
+  return assignment.line, assignment.col
+end
+
+function Game:get_assignment_char(assignment)
+  local line, col = self:get_assignment_coords(assignment)
+  return self:get_char(line, col), line, col
+end
+
+function Game:create_marker(assignment)
+  assignment.mark_id = vim.api.nvim_buf_set_extmark(
+    self.buf,
+    MARK_NS,
+    assignment.line - 1,
+    assignment.col - 1,
+    {
+      end_row = assignment.line - 1,
+      end_col = assignment.col,
+      hl_group = "LearningGameAssignment",
+      right_gravity = false,
+    }
+  )
+end
+
+function Game:clear_marker(assignment)
+  if assignment.mark_id then
+    pcall(vim.api.nvim_buf_del_extmark, self.buf, MARK_NS, assignment.mark_id)
+    assignment.mark_id = nil
+  end
+end
+
+function Game:start_tracking()
+  self.augroup = vim.api.nvim_create_augroup("LearningGame" .. self.buf, { clear = true })
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    buffer = self.buf,
+    group = self.augroup,
+    callback = function()
+      self:evaluate_assignments()
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("TextYankPost", {
+    group = self.augroup,
+    callback = function(params)
+      local regcontents = copy_regcontents(vim.v.event.regcontents)
+      local event = {
+        buf = params.buf,
+        operator = vim.v.event.operator,
+        regname = vim.v.event.regname,
+        regcontents = regcontents,
+        regtype = vim.v.event.regtype,
+      }
+      self:on_yanked(event)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    buffer = self.buf,
+    group = self.augroup,
+    callback = function()
+      if self.active then
+        self:finish(true)
+      end
+    end,
+  })
+
+  self.key_handler = function(_)
+    if not self.active then
+      return
+    end
+    if vim.api.nvim_get_current_buf() ~= self.buf then
+      return
+    end
+    self.key_count = self.key_count + 1
+    self:update_status()
+  end
+  vim.on_key(self.key_handler, KEY_NS)
+end
+
+function Game:evaluate_assignments()
+  if not self.active then
+    return
+  end
+  for _, assignment in ipairs(self.assignments) do
+    if not assignment.done then
+      local handler = assignment_types[assignment.type]
+      if handler and handler.check then
+        local ok = handler.check(self, assignment)
+        if ok then
+          self:mark_assignment_done(assignment)
+        end
+      end
+    end
+  end
+end
+
+function Game:on_yanked(event)
+  if not event or not event.regcontents then
+    return
+  end
+  self.last_yank_text = table.concat(event.regcontents, "\n")
+  self.last_yank_line = event.regcontents[1]
+  if not self.active or event.buf ~= self.buf or event.operator ~= "y" then
+    return
+  end
+  local start_mark = vim.api.nvim_buf_get_mark(self.buf, "'[")
+  local end_mark = vim.api.nvim_buf_get_mark(self.buf, "']")
+  local sline = start_mark[1]
+  local eline = end_mark[1]
+  if sline == 0 or eline == 0 then
+    return
+  end
+  if sline > eline then
+    sline, eline = eline, sline
+  end
+  for _, assignment in ipairs(self.assignments) do
+    if not assignment.done and assignment.type == "y" then
+      local line = select(1, self:get_assignment_coords(assignment))
+      if line >= sline and line <= eline then
+        self:mark_assignment_done(assignment)
+      end
+    end
+  end
+end
+
+function Game:mark_assignment_done(assignment)
+  assignment.done = true
+  self.completed = self.completed + 1
+  local handler = assignment_types[assignment.type]
+  if handler and handler.cleanup then
+    handler.cleanup(self, assignment)
+  end
+  self:clear_marker(assignment)
+  self:update_status()
+  self:display_tip()
+  if self.completed == #self.assignments then
+    self:finish(false)
+  end
+end
+
+function Game:next_assignment()
+  for _, assignment in ipairs(self.assignments) do
+    if not assignment.done then
+      return assignment
+    end
+  end
+end
+
+function Game:display_tip()
+  if not self.active then
+    return
+  end
+  local target = self:next_assignment()
+  if not target then
+    vim.api.nvim_echo({ { "LearningGame complete!", "Title" } }, false, {})
+    return
+  end
+  local handler = assignment_types[target.type]
+  local line, col = self:get_assignment_coords(target)
+  local message = string.format(
+    "Next target (%s @ %d:%d): %s",
+    target.type,
+    line,
+    col,
+    handler and handler.description or ""
+  )
+  vim.api.nvim_echo({ { message, "ModeMsg" } }, false, {})
+end
+
+function Game:update_status()
+  if not self.win or not vim.api.nvim_win_is_valid(self.win) then
+    return
+  end
+  local total = #self.assignments
+  local msg = string.format(
+    " LearningGame %02d/%02d | Keys %d ",
+    self.completed,
+    total,
+    self.key_count
+  )
+  vim.wo[self.win].statusline = msg .. "%=%l:%c"
+end
+
+function Game:finish(aborted)
+  if not self.active then
+    return
+  end
+  self.active = false
+  if self.key_handler then
+    vim.on_key(nil, KEY_NS)
+    self.key_handler = nil
+  end
+  if self.augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, self.augroup)
+    self.augroup = nil
+  end
+  if vim.api.nvim_buf_is_valid(self.buf) then
+    pcall(vim.api.nvim_buf_delete, self.buf, { force = true })
+  end
+  local total_time = 0
+  if self.start_time then
+    total_time = (uv.hrtime() - self.start_time) / 1e9
+  end
+  local minutes = math.max(total_time / 60, 1e-6)
+  local kpm = self.key_count / minutes
+  if aborted then
+    vim.notify(
+      string.format(
+        "LearningGame aborted – %d/%d assignments solved",
+        self.completed,
+        #self.assignments
+      ),
+      vim.log.levels.WARN
+    )
+  else
+    vim.notify(
+      string.format(
+        "LearningGame finished in %.1fs | %d keys | %.1f keys/min",
+        total_time,
+        self.key_count,
+        kpm
+      ),
+      vim.log.levels.INFO,
+      { title = "LearningGame stats" }
+    )
+  end
+  M.active_game = nil
+end
+
+assignment_types = {
+  x = {
+    description = "Move to this marker and delete it with `x`.",
+    check = function(game, assignment)
+      local char = game:get_assignment_char(assignment)
+      return char ~= "x"
+    end,
+  },
+  r = {
+    description = "Change this marker with `r` so it becomes a different character.",
+    check = function(game, assignment)
+      local char = game:get_assignment_char(assignment)
+      return char ~= "r" and char ~= ""
+    end,
+  },
+  y = {
+    description = "Yank this entire line with `yy` or another linewise yank.",
+    cleanup = function(game, assignment)
+      local line, col = game:get_assignment_coords(assignment)
+      game:set_char(line, col, ".")
+    end,
+  },
+  u = {
+    description = "Make a change at this marker and undo it with `u`.",
+    check = function(game, assignment)
+      local char = game:get_assignment_char(assignment)
+      if char ~= "u" then
+        assignment.seen_change = true
+      end
+      return assignment.seen_change and char == "u"
+    end,
+    cleanup = function(game, assignment)
+      local line, col = game:get_assignment_coords(assignment)
+      game:set_char(line, col, ".")
+    end,
+  },
+  p = {
+    description = "Paste (`p`) the text you last yanked so it starts at this marker.",
+    check = function(game, assignment)
+      local char, line, col = game:get_assignment_char(assignment)
+      if char ~= "p" then
+        assignment.seen_change = true
+      end
+      if not assignment.seen_change then
+        return false
+      end
+      local expected = game.last_yank_line
+      if not expected or expected == "" then
+        return false
+      end
+      local line_text = game:get_line(line)
+      if line_text == "" then
+        return false
+      end
+      local stop_col = col + #expected - 1
+      if stop_col > #line_text then
+        return false
+      end
+      local actual = line_text:sub(col, stop_col)
+      return actual == expected
+    end,
+  },
+}
+
+function M.start()
+  if M.active_game and M.active_game.active then
+    vim.notify("LearningGame is already running", vim.log.levels.WARN)
+    return
+  end
+  local game = Game:new(config)
+  M.active_game = game
+  game:start()
+end
+
+function M.stop()
+  if not M.active_game or not M.active_game.active then
+    vim.notify("No LearningGame is running", vim.log.levels.INFO)
+    return
+  end
+  M.active_game:finish(true)
+end
+
+function M.setup(opts)
+  config = vim.tbl_deep_extend("force", vim.deepcopy(default_config), opts or {})
+  if not M._commands_created then
+    vim.api.nvim_set_hl(0, "LearningGameAssignment", { link = "IncSearch" })
+    vim.api.nvim_create_user_command("LearningGameStart", function()
+      M.start()
+    end, { desc = "Start the LearningGame session" })
+    vim.api.nvim_create_user_command("LearningGameStop", function()
+      M.stop()
+    end, { desc = "Stop the active LearningGame session" })
+    M._commands_created = true
+  end
+end
+
+M.setup()
+
+return M
