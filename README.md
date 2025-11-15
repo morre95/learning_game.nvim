@@ -8,7 +8,7 @@ LearningGame is a small Neovim mini-game built for LazyVim users who want to dri
 - `u` – make a change and undo it with `u`
 - `p` – paste your last yank starting on the marker
 
-The game tracks elapsed time, total key presses, and keys per minute. When you complete all assignments (or abort the run) you will see a small stats summary.
+The game tracks elapsed time, total key presses, and keys per minute. When you complete all assignments you get a centered popup with the run’s stats (aborting still shows a notify-only summary).
 
 ## Installation (LazyVim / lazy.nvim)
 

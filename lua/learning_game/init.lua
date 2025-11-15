@@ -23,6 +23,16 @@ local function shuffle(list)
 	end
 end
 
+local function calc_popup_size(lines)
+	local width = 0
+	for _, line in ipairs(lines) do
+		width = math.max(width, vim.api.nvim_strwidth(line))
+	end
+	local padding = 4
+	local height = #lines + 2
+	return width + padding, height
+end
+
 ---@param lines any
 ---@return string[]|nil
 local function copy_regcontents(lines)
@@ -361,6 +371,9 @@ function Game:finish(aborted)
 		pcall(vim.api.nvim_del_augroup_by_id, self.augroup)
 		self.augroup = nil
 	end
+	if self.win and vim.api.nvim_win_is_valid(self.win) then
+		pcall(vim.api.nvim_win_close, self.win, true)
+	end
 	if vim.api.nvim_buf_is_valid(self.buf) then
 		pcall(vim.api.nvim_buf_delete, self.buf, { force = true })
 	end
@@ -376,13 +389,56 @@ function Game:finish(aborted)
 			vim.log.levels.WARN
 		)
 	else
-		vim.notify(
-			string.format("LearningGame finished in %.1fs | %d keys | %.1f keys/min", total_time, self.key_count, kpm),
-			vim.log.levels.INFO,
-			{ title = "LearningGame stats" }
-		)
+		-- vim.notify(
+		-- 	string.format("LearningGame finished in %.1fs | %d keys | %.1f keys/min", total_time, self.key_count, kpm),
+		-- 	vim.log.levels.INFO,
+		-- 	{ title = "LearningGame stats" }
+		-- )
+		self:show_results_popup(total_time, kpm)
 	end
 	M.active_game = nil
+end
+
+function Game:show_results_popup(total_time, kpm)
+	local lines = {
+		" LearningGame Complete ",
+		string.rep("-", 26),
+		string.format("Assignments   : %d/%d", self.completed, #self.assignments),
+		string.format("Time elapsed  : %.1f s", total_time),
+		string.format("Key presses   : %d", self.key_count),
+		string.format("Keys per min  : %.1f", kpm),
+		"",
+		"Press q, <Esc> or <CR> to close",
+	}
+	local width, height = calc_popup_size(lines)
+	local row = math.max(math.floor((vim.o.lines - height) / 2) - 1, 0)
+	local col = math.max(math.floor((vim.o.columns - width) / 2), 0)
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.bo[buf].bufhidden = "wipe"
+	vim.bo[buf].buftype = "nofile"
+	vim.bo[buf].modifiable = true
+	vim.bo[buf].filetype = "learninggame_results"
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].modifiable = false
+	local win = vim.api.nvim_open_win(buf, true, {
+		relative = "editor",
+		width = width,
+		height = height,
+		row = row,
+		col = col,
+		style = "minimal",
+		border = "rounded",
+		zindex = 200,
+	})
+	vim.wo[win].winhl = "Normal:NormalFloat,FloatBorder:FloatBorder"
+	local function close_popup()
+		if vim.api.nvim_win_is_valid(win) then
+			vim.api.nvim_win_close(win, true)
+		end
+	end
+	for _, key in ipairs({ "q", "<Esc>", "<CR>" }) do
+		vim.keymap.set("n", key, close_popup, { buffer = buf, nowait = true, silent = true })
+	end
 end
 
 assignment_types = {
