@@ -443,6 +443,10 @@ assignment_types = {
 			local char = game:get_assignment_char(assignment)
 			return char ~= "x"
 		end,
+		cleanup = function(game, assignment)
+			local line, col = game:get_assignment_coords(assignment)
+			game:set_char(line, col, ".")
+		end,
 	},
 	r = {
 		description = "Change this marker with `r` so it becomes a different character.",
