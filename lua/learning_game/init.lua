@@ -82,7 +82,7 @@ function Game:open_board()
 
 	local lines = {}
 	for _ = 1, self.config.board.height do
-		lines[#lines + 1] = string.rep(" ", self.config.board.width)
+		lines[#lines + 1] = string.rep(".", self.config.board.width)
 	end
 	vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
 
@@ -460,6 +460,10 @@ assignment_types = {
 		check = function(game, assignment)
 			local char = game:get_assignment_char(assignment)
 			return char ~= "r" and char ~= ""
+		end,
+		cleanup = function(game, assignment)
+			local line, col = game:get_assignment_coords(assignment)
+			game:set_char(line, col, ".")
 		end,
 	},
 }
