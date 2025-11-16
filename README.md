@@ -18,6 +18,7 @@ Add the plugin to your LazyVim configuration and call `setup` once with any over
     require("learning_game").setup({
       assignment_count = 20,
       board = { width = 60, height = 20 },
+      line_numbers = { enabled = true, relative = false },
     })
   end,
 }
@@ -29,6 +30,8 @@ Once installed you get two commands:
 
 - `:LearningGameStart` – spawn a new LearningGame tab and begin tracking stats
 - `:LearningGameStop` – abort the active session (useful if you want to reset quickly)
+
+Line numbers default to absolute; configure `line_numbers.enabled` or `line_numbers.relative` in `setup()` to turn them off or switch to relative numbering.
 
 ## Gameplay Notes
 

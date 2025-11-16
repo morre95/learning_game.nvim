@@ -4,6 +4,10 @@ local uv = vim.uv or vim.loop
 local default_config = {
 	assignment_count = 20,
 	assignment_symbols = { "x", "r" },
+	line_numbers = {
+		enabled = true,
+		relative = true,
+	},
 	board = {
 		width = 56,
 		height = 18,
@@ -62,14 +66,17 @@ function Game:open_board()
 	vim.cmd("tabnew")
 	self.win = vim.api.nvim_get_current_win()
 	self.buf = vim.api.nvim_get_current_buf()
+	local line_numbers = self.config.line_numbers or {}
+	local numbers_enabled = line_numbers.enabled ~= false
+	local relative_numbers = numbers_enabled and line_numbers.relative == true
 	vim.bo[self.buf].bufhidden = "wipe"
 	vim.bo[self.buf].buftype = "nofile"
 	vim.bo[self.buf].swapfile = false
 	vim.bo[self.buf].filetype = "learninggame"
 	vim.bo[self.buf].modifiable = true
 	vim.bo[self.buf].readonly = false
-	vim.wo[self.win].number = false
-	vim.wo[self.win].relativenumber = false
+	vim.wo[self.win].number = numbers_enabled
+	vim.wo[self.win].relativenumber = relative_numbers
 	vim.wo[self.win].cursorline = false
 	vim.api.nvim_buf_set_name(self.buf, "LearningGame")
 
