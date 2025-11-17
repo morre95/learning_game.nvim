@@ -401,12 +401,21 @@ function Game:finish(aborted)
 	M.active_game = nil
 end
 
+local function split_time(total_sec)
+	local minutes = math.floor(total_sec / 60)
+	local seconds = math.floor(total_sec % 60)
+	local millis = math.floor((total_sec % 1) * 1000)
+
+	return minutes, seconds, millis
+end
+
 function Game:show_results_popup(total_time, kpm)
+	local minutes, seconds, millis = split_time(total_time)
 	local lines = {
 		" LearningGame Complete ",
 		string.rep("-", 26),
 		string.format("Assignments   : %d/%d", self.completed, self.total_assignments),
-		string.format("Time elapsed  : %.1f s", total_time),
+		string.format("Time elapsed  : %02d:%02d.%03d", minutes, seconds, millis),
 		string.format("Key presses   : %d", self.key_count),
 		string.format("Keys per min  : %.1f", kpm),
 		"",
