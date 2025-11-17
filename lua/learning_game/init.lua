@@ -456,6 +456,7 @@ assignment_types = {
 	x = {
 		description = "Move to this marker and delete it with `x`.",
 		check = function(game, assignment)
+			-- NOTE: Fixa en check så man inte kan radera raden för att komma vidare
 			local char = game:get_assignment_char(assignment)
 			return char == "."
 		end,
