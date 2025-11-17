@@ -448,11 +448,15 @@ assignment_types = {
 		description = "Move to this marker and delete it with `x`.",
 		check = function(game, assignment)
 			local char = game:get_assignment_char(assignment)
-			return char ~= "x"
+			return char == "."
 		end,
 		cleanup = function(game, assignment)
 			local line, col = game:get_assignment_coords(assignment)
-			game:set_char(line, col, ".")
+
+			local line_string = game:get_line(line)
+			if #line_string == config.board.width - 1 then
+				game:set_char(line, col, "..")
+			end
 		end,
 	},
 	r = {
