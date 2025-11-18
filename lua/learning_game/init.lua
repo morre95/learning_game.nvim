@@ -93,6 +93,10 @@ function Game:open_board()
 			vim.cmd("tabclose")
 		end
 	end, { buffer = self.buf, nowait = true, desc = "Quit LearningGame" })
+
+	vim.keymap.set("n", "?", function()
+		self:show_help()
+	end, { buffer = self.buf, nowait = true, desc = "Show LearningGame help" })
 end
 
 function Game:random_positions(count)
@@ -365,6 +369,64 @@ function Game:update_status()
 	vim.wo[self.win].statusline = msg .. "%=%l:%c"
 end
 
+function Game:show_help()
+	local lines = {
+		" LearningGame Help ",
+		string.rep("-", 50),
+		"",
+		"Assignment Types:",
+		"",
+	}
+
+	for symbol, handler in pairs(assignment_types) do
+		table.insert(lines, string.format("  %s - %s", symbol, handler.description or "No description"))
+		table.insert(lines, "")
+	end
+
+	table.insert(lines, string.rep("-", 50))
+	table.insert(lines, "")
+	table.insert(lines, "Controls:")
+	table.insert(lines, "  q         - Quit game")
+	table.insert(lines, "  ?         - Show this help")
+	table.insert(lines, "")
+	table.insert(lines, "Press q, <Esc> or <CR> to close")
+
+	local width, height = calc_popup_size(lines)
+	local row = math.max(math.floor((vim.o.lines - height) / 2) - 1, 0)
+	local col = math.max(math.floor((vim.o.columns - width) / 2), 0)
+
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.bo[buf].bufhidden = "wipe"
+	vim.bo[buf].buftype = "nofile"
+	vim.bo[buf].modifiable = true
+	vim.bo[buf].filetype = "learninggame_help"
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].modifiable = false
+
+	local win = vim.api.nvim_open_win(buf, true, {
+		relative = "editor",
+		width = width,
+		height = height,
+		row = row,
+		col = col,
+		style = "minimal",
+		border = "rounded",
+		zindex = 200,
+	})
+
+	vim.wo[win].winhl = "Normal:NormalFloat,FloatBorder:FloatBorder"
+
+	local function close_popup()
+		if vim.api.nvim_win_is_valid(win) then
+			vim.api.nvim_win_close(win, true)
+		end
+	end
+
+	for _, key in ipairs({ "q", "<Esc>", "<CR>" }) do
+		vim.keymap.set("n", key, close_popup, { buffer = buf, nowait = true, silent = true })
+	end
+end
+
 function Game:finish(aborted)
 	if not self.active then
 		return
@@ -456,7 +518,6 @@ assignment_types = {
 	x = {
 		description = "Move to this marker and delete it with `x`.",
 		check = function(game, assignment)
-			-- NOTE: Fixa en check så man inte kan radera raden för att komma vidare
 			local char = game:get_assignment_char(assignment)
 			return char == "."
 		end,
@@ -472,8 +533,9 @@ assignment_types = {
 	r = {
 		description = "Change this marker with `r` so it becomes a different character.",
 		check = function(game, assignment)
+			-- NOTE: Fixa en check så man inte kan radera raden för att komma vidare
 			local char = game:get_assignment_char(assignment)
-			return char ~= "r" and char ~= ""
+			return char ~= "r" and char ~= "."
 		end,
 		cleanup = function(game, assignment)
 			local line, col = game:get_assignment_coords(assignment)
