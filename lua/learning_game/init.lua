@@ -295,6 +295,7 @@ function Game:evaluate_assignments()
 	local handler = assignment_types[assignment.type]
 	if handler and handler.check then
 		local ok = handler.check(self, assignment)
+
 		if ok then
 			self:mark_assignment_done(assignment)
 		end
