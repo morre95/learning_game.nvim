@@ -66,24 +66,29 @@ function Game:open_board()
 	vim.cmd("tabnew")
 	self.win = vim.api.nvim_get_current_win()
 	self.buf = vim.api.nvim_get_current_buf()
+
 	local line_numbers = self.config.line_numbers or {}
 	local numbers_enabled = line_numbers.enabled ~= false
 	local relative_numbers = numbers_enabled and line_numbers.relative == true
+
 	vim.bo[self.buf].bufhidden = "wipe"
 	vim.bo[self.buf].buftype = "nofile"
 	vim.bo[self.buf].swapfile = false
 	vim.bo[self.buf].filetype = "learninggame"
 	vim.bo[self.buf].modifiable = true
 	vim.bo[self.buf].readonly = false
+
 	vim.wo[self.win].number = numbers_enabled
 	vim.wo[self.win].relativenumber = relative_numbers
 	vim.wo[self.win].cursorline = false
+
 	vim.api.nvim_buf_set_name(self.buf, "LearningGame")
 
 	local lines = {}
 	for _ = 1, self.config.board.height do
 		lines[#lines + 1] = string.rep(".", self.config.board.width)
 	end
+
 	vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
 
 	vim.keymap.set("n", "q", function()
@@ -97,6 +102,11 @@ function Game:open_board()
 	vim.keymap.set("n", "?", function()
 		self:show_help()
 	end, { buffer = self.buf, nowait = true, desc = "Show LearningGame help" })
+
+	vim.keymap.set("n", "<left>", '<cmd>echo "Use h to move!!"<CR>')
+	vim.keymap.set("n", "<right>", '<cmd>echo "Use l to move!!"<CR>')
+	vim.keymap.set("n", "<up>", '<cmd>echo "Use k to move!!"<CR>')
+	vim.keymap.set("n", "<down>", '<cmd>echo "Use j to move!!"<CR>')
 end
 
 function Game:random_positions(count)
@@ -512,11 +522,6 @@ function Game:show_results_popup(total_time, kpm)
 	for _, key in ipairs({ "q", "<Esc>", "<CR>" }) do
 		vim.keymap.set("n", key, close_popup, { buffer = buf, nowait = true, silent = true })
 	end
-
-	vim.keymap.set("n", "<left>", '<cmd>echo "Use h to move!!"<CR>')
-	vim.keymap.set("n", "<right>", '<cmd>echo "Use l to move!!"<CR>')
-	vim.keymap.set("n", "<up>", '<cmd>echo "Use k to move!!"<CR>')
-	vim.keymap.set("n", "<down>", '<cmd>echo "Use j to move!!"<CR>')
 end
 
 assignment_types = {
