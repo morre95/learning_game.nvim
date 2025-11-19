@@ -512,6 +512,11 @@ function Game:show_results_popup(total_time, kpm)
 	for _, key in ipairs({ "q", "<Esc>", "<CR>" }) do
 		vim.keymap.set("n", key, close_popup, { buffer = buf, nowait = true, silent = true })
 	end
+
+	vim.keymap.set("n", "<left>", '<cmd>echo "Use h to move!!"<CR>')
+	vim.keymap.set("n", "<right>", '<cmd>echo "Use l to move!!"<CR>')
+	vim.keymap.set("n", "<up>", '<cmd>echo "Use k to move!!"<CR>')
+	vim.keymap.set("n", "<down>", '<cmd>echo "Use j to move!!"<CR>')
 end
 
 assignment_types = {
