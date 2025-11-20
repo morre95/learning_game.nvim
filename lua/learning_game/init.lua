@@ -103,10 +103,30 @@ function Game:open_board()
 		self:show_help()
 	end, { buffer = self.buf, nowait = true, desc = "Show LearningGame help" })
 
-	vim.keymap.set("n", "<left>", '<cmd>echo "Use h to move!!"<CR>')
-	vim.keymap.set("n", "<right>", '<cmd>echo "Use l to move!!"<CR>')
-	vim.keymap.set("n", "<up>", '<cmd>echo "Use k to move!!"<CR>')
-	vim.keymap.set("n", "<down>", '<cmd>echo "Use j to move!!"<CR>')
+	vim.keymap.set(
+		"n",
+		"<left>",
+		'<cmd>echo "Use h to move!!"<CR>',
+		{ buffer = self.buf, nowait = true, desc = "Dissable left arrow key" }
+	)
+	vim.keymap.set(
+		"n",
+		"<right>",
+		'<cmd>echo "Use l to move!!"<CR>',
+		{ buffer = self.buf, nowait = true, desc = "Dissable right arrow key" }
+	)
+	vim.keymap.set(
+		"n",
+		"<up>",
+		'<cmd>echo "Use k to move!!"<CR>',
+		{ buffer = self.buf, nowait = true, desc = "Dissable up arrow key" }
+	)
+	vim.keymap.set(
+		"n",
+		"<down>",
+		'<cmd>echo "Use j to move!!"<CR>',
+		{ buffer = self.buf, nowait = true, desc = "Dissable down arrow key" }
+	)
 end
 
 function Game:random_positions(count)
